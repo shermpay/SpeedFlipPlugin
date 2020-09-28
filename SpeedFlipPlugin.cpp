@@ -2,6 +2,9 @@
 
 #include <fstream>
 #include <sstream>
+#include <math.h>
+
+#define PI 3.14159265
 
 BAKKESMOD_PLUGIN(SpeedFlipPlugin, "SpeedFlip Plugin", "0.1", PLUGINTYPE_FREEPLAY)
 
@@ -20,16 +23,22 @@ void SpeedFlipPlugin::onLoad()
 	gameWrapper->HookEventPost("Function Engine.Controller.Restart", std::bind(&SpeedFlipPlugin::OnReset, this, std::placeholders::_1));
 
 	started = false;
+	state = 0;
 	inputHistory.clear();
 	std::stringstream logBuffer;
 	logBuffer << "SpeedFlip Plugin Loaded!";
 	cvarManager->log(logBuffer.str());
+	for (int i = 0; i < 10; i++) {
+		popups.push_back(new Popup({ "" }));
+	}
+	gameWrapper->RegisterDrawable(std::bind(&SpeedFlipPlugin::Render, this, std::placeholders::_1));
 }
 
 void SpeedFlipPlugin::onUnload()
 {
 	cvarManager->log("SpeedFlip Plugin Unloaded!");
 }
+
 
 void SpeedFlipPlugin::OnInput(CarWrapper cw, void* params)
 {
@@ -38,13 +47,64 @@ void SpeedFlipPlugin::OnInput(CarWrapper cw, void* params)
 	}
 
 	ControllerInput* ci = (ControllerInput*)params;
+	// Game time accounts for time dilation etc.
+	float curGameTime = gameWrapper->GetGameEventAsServer().GetSecondsElapsed();
 
-	if (ci->Throttle > 0 || ci->ActivateBoost > 0) {
-		started = true;
+
+	// 0 = reset, 1 = accel, 2 = left stick, 3 = 1st jump, 4 = top right, 5 = 2nd jump, 6 = bottom/cancel, 7 =
+	if (state == 0) {
+		if (!started && (ci->Throttle > 0 || ci->ActivateBoost > 0)) {
+			started = true;
+			prevTime = curGameTime;
+			state = 1;
+		}
+	}
+	else if (state == 1) {
+		if (ci->Yaw < -0.9) {
+			state = 2;
+			popups[state]->text = std::to_string(curGameTime - prevTime);
+			prevTime = curGameTime;
+			renderPopup();
+		}
+	}
+	else if (state == 2) {
+		// because the ci naming is a lie. ActivateBoost is jump when I tested it
+		if (ci->ActivateBoost== 1) {
+			state = 3;
+			popups[state]->text = std::to_string(curGameTime - prevTime);
+			prevTime = curGameTime;
+			renderPopup();
+		}
+	}
+	else if (state == 3) {
+		if (ci->Yaw > 0.1 && ci->ActivateBoost == 0) {
+			state = 4;
+			popups[state]->text = std::to_string(curGameTime - prevTime);
+			prevTime = curGameTime;
+			renderPopup();
+		}
+	}
+	else if (state == 4) {
+		if (ci->ActivateBoost == 1) {
+			state = 5;
+			popups[state]->text = std::to_string(curGameTime - prevTime) + " ANGLE: " + std::to_string(-atan(ci->Yaw / ci->Pitch) * 180 / PI);
+			prevTime = curGameTime;
+			renderPopup();
+		}
+	}
+	else if (state == 5) {
+		if (ci->Pitch > 0.9) {
+			state = 6;
+			popups[state]->text = std::to_string(curGameTime - prevTime);
+			prevTime = curGameTime;
+			renderPopup();
+		}
 	}
 
+	
+
 	if (cvarManager->getCvar(CVAR_PLUGIN_ENABLED).getBoolValue() && started) {
-		inputHistory.push_back(*ci);
+		inputHistory.push_back({ curGameTime, *ci });
 	}
 }
 
@@ -54,7 +114,7 @@ void SpeedFlipPlugin::OnHitBall(std::string eventName)
 		return;
 	}
 	started = false;
-	save();
+	// save();
 	inputHistory.clear();
 	cvarManager->log("SUCCESSFULLY HIT THE BALL!!!");
 }
@@ -65,14 +125,16 @@ void SpeedFlipPlugin::OnReset(std::string eventName)
 		return;
 	}
 	started = false;
-	save();
+	state = 0;
+	// save();
 	inputHistory.clear();
 }
 
-static std::string inputToString(ControllerInput ci)
+static std::string inputToString(float ts, ControllerInput ci)
 {
 	std::stringstream ss;
-	ss << "ActivateBoost=" << ci.ActivateBoost;
+	ss << ts;
+	ss << ",ActivateBoost=" << ci.ActivateBoost;
 	ss << ",DodgeForward=" << ci.DodgeForward;
 	ss << ",DodgeStrafe=" << ci.DodgeStrafe;
 	ss << ",Handbrake=" << ci.Handbrake;
@@ -94,9 +156,9 @@ void SpeedFlipPlugin::save()
 	if (myfile.is_open())
 	{
 		myfile << "=START=\n";
-		for (auto ci : inputHistory)
+		for (auto input : inputHistory)
 		{
-			myfile << inputToString(ci);
+			myfile << inputToString(input.timeStamp, input.ci);
 			myfile << "\n";
 		}
 		myfile << "=END=\n";
@@ -106,4 +168,30 @@ void SpeedFlipPlugin::save()
 		cvarManager->log("Can't write savefile.");
 	}
 	myfile.close();
+}
+
+void SpeedFlipPlugin::renderPopup() {
+	// Override lastMsg, so that the render will show for the next 4s
+	lastMsg = std::chrono::system_clock::now();
+}
+
+void SpeedFlipPlugin::Render(CanvasWrapper canvas)
+{
+	if (!gameWrapper->IsInGame() || popups.empty() || std::chrono::duration_cast<std::chrono::seconds> (std::chrono::system_clock::now() - lastMsg).count() > 4)
+		return;
+
+	auto screenSize = canvas.GetSize();
+	for (int i = 0; i < popups.size(); i++)
+	{
+		auto pop = popups.at(i);
+		if (pop->startLocation.X < 0)
+		{
+			pop->startLocation = { (int)(screenSize.X * 0.35), (int)(screenSize.Y * 0.1 + i * 0.035 * screenSize.Y) };
+		}
+
+		Vector2 drawLoc = { pop->startLocation.X, pop->startLocation.Y };
+		canvas.SetPosition(drawLoc);
+		canvas.SetColor(pop->color.R, pop->color.G, pop->color.B, 255);
+		canvas.DrawString(pop->text, 3, 3);
+	}
 }

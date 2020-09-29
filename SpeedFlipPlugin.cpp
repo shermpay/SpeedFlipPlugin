@@ -23,6 +23,7 @@ void SpeedFlipPlugin::onLoad()
 	gameWrapper->HookEventPost("Function Engine.Controller.Restart", std::bind(&SpeedFlipPlugin::OnReset, this, std::placeholders::_1));
 
 	started = false;
+	lastMsg = std::chrono::system_clock::now();
 	state = 0;
 	inputHistory.clear();
 	std::stringstream logBuffer;
@@ -50,17 +51,22 @@ void SpeedFlipPlugin::OnInput(CarWrapper cw, void* params)
 	// Game time accounts for time dilation etc.
 	float curGameTime = gameWrapper->GetGameEventAsServer().GetSecondsElapsed();
 
+	if (gameWrapper->GetLocalCar().GetbSuperSonic() && !isSupersonic) {
+		popups[9]->text = "SS: " + std::to_string(curGameTime - startTime);
+		isSupersonic = true;
+	}
 
 	// 0 = reset, 1 = accel, 2 = left stick, 3 = 1st jump, 4 = top right, 5 = 2nd jump, 6 = bottom/cancel, 7 =
 	if (state == 0) {
 		if (!started && (ci->Throttle > 0 || ci->ActivateBoost > 0)) {
 			started = true;
 			prevTime = curGameTime;
+			startTime = curGameTime;
 			state = 1;
 		}
 	}
 	else if (state == 1) {
-		if (ci->Yaw < -0.9) {
+		if (ci->Yaw > 0.5) {
 			state = 2;
 			popups[state]->text = std::to_string(curGameTime - prevTime);
 			prevTime = curGameTime;
@@ -77,7 +83,7 @@ void SpeedFlipPlugin::OnInput(CarWrapper cw, void* params)
 		}
 	}
 	else if (state == 3) {
-		if (ci->Yaw > 0.1 && ci->ActivateBoost == 0) {
+		if (ci->Yaw < 0 && ci->ActivateBoost == 0) {
 			state = 4;
 			popups[state]->text = std::to_string(curGameTime - prevTime);
 			prevTime = curGameTime;
@@ -125,6 +131,7 @@ void SpeedFlipPlugin::OnReset(std::string eventName)
 		return;
 	}
 	started = false;
+	isSupersonic = false;
 	state = 0;
 	// save();
 	inputHistory.clear();
@@ -177,7 +184,7 @@ void SpeedFlipPlugin::renderPopup() {
 
 void SpeedFlipPlugin::Render(CanvasWrapper canvas)
 {
-	if (!gameWrapper->IsInGame() || popups.empty() || std::chrono::duration_cast<std::chrono::seconds> (std::chrono::system_clock::now() - lastMsg).count() > 4)
+	if (!gameWrapper->IsInCustomTraining() || popups.empty() || std::chrono::duration_cast<std::chrono::seconds> (std::chrono::system_clock::now() - lastMsg).count() > 4)
 		return;
 
 	auto screenSize = canvas.GetSize();

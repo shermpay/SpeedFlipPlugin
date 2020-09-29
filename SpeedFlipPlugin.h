@@ -31,8 +31,10 @@ private:
 	std::chrono::system_clock::time_point lastMsg;
 
 	bool started;
+	bool isSupersonic;
 	int state; // 0 = reset, 1 = accel, 2 = left stick, 3 = 1st jump, 4 = top right, 5 = 2nd jump, 6 = bottom/cancel, 7 = 
 	float prevTime;
+	float startTime;
 	std::vector<Popup*> popups;
 	std::vector<Input> inputHistory;
 

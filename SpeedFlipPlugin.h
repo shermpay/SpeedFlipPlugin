@@ -35,6 +35,7 @@ private:
 	int state; // 0 = reset, 1 = accel, 2 = left stick, 3 = 1st jump, 4 = top right, 5 = 2nd jump, 6 = bottom/cancel, 7 = 
 	float prevTime;
 	float startTime;
+	float jumpTime;
 	std::vector<Popup*> popups;
 	std::vector<Input> inputHistory;
 

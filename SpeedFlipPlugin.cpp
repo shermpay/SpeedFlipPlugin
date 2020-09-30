@@ -52,7 +52,7 @@ void SpeedFlipPlugin::OnInput(CarWrapper cw, void* params)
 	float curGameTime = gameWrapper->GetGameEventAsServer().GetSecondsElapsed();
 
 	if (gameWrapper->GetLocalCar().GetbSuperSonic() && !isSupersonic) {
-		popups[9]->text = "SS: " + std::to_string(curGameTime - startTime);
+		popups[9]->text = "SS: " + std::to_string(curGameTime - startTime) + ", " + std::to_string(curGameTime - jumpTime);
 		isSupersonic = true;
 	}
 
@@ -66,7 +66,7 @@ void SpeedFlipPlugin::OnInput(CarWrapper cw, void* params)
 		}
 	}
 	else if (state == 1) {
-		if (ci->Yaw > 0.5) {
+		if (ci->Yaw > 0.7 || ci->Yaw < -0.7) {
 			state = 2;
 			popups[state]->text = std::to_string(curGameTime - prevTime);
 			prevTime = curGameTime;
@@ -79,11 +79,12 @@ void SpeedFlipPlugin::OnInput(CarWrapper cw, void* params)
 			state = 3;
 			popups[state]->text = std::to_string(curGameTime - prevTime);
 			prevTime = curGameTime;
+			jumpTime = curGameTime;
 			renderPopup();
 		}
 	}
 	else if (state == 3) {
-		if (ci->Yaw < 0 && ci->ActivateBoost == 0) {
+		if ((ci->Yaw < -0.1 && ci->Yaw > -0.5) || (ci->Yaw > 0.1 && ci->Yaw < 0.5) && ci->ActivateBoost == 0) {
 			state = 4;
 			popups[state]->text = std::to_string(curGameTime - prevTime);
 			prevTime = curGameTime;
